@@ -1,10 +1,11 @@
+
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Keyboard, Play, Pause, Download, Trash2, BrainCircuit, Loader2, AlertCircle, Gauge, Timer, Delete } from 'lucide-react';
+import { Keyboard, Play, Pause, Download, Trash2, BrainCircuit, Loader2, AlertCircle, Gauge, Delete, ListOrdered } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzeKeystrokes, type AnalyzeKeystrokesOutput } from '@/ai/flows/analyze-keystrokes-flow';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,6 +16,8 @@ interface KeystrokeEntry {
   timestamp: number;
   formattedTimestamp: string;
 }
+
+const TOP_N_KEYS = 5;
 
 export default function KeystrokeChroniclePage() {
   const [keystrokes, setKeystrokes] = useState<KeystrokeEntry[]>([]);
@@ -29,6 +32,11 @@ export default function KeystrokeChroniclePage() {
   const [totalKeys, setTotalKeys] = useState<number>(0);
   const [backspaceCount, setBackspaceCount] = useState<number>(0);
   const [kpm, setKpm] = useState<number>(0);
+
+  // Frequent Keys State
+  const [keyFrequencies, setKeyFrequencies] = useState<Record<string, number>>({});
+  const [topKeys, setTopKeys] = useState<{ key: string; count: number }[]>([]);
+
 
   const { toast } = useToast();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -52,16 +60,15 @@ export default function KeystrokeChroniclePage() {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
-      // Optionally calculate final KPM when stopping
       if (!isRecording && startTime && totalKeys > 0) {
           const finalDurationMinutes = (Date.now() - startTime) / (1000 * 60);
-          if (finalDurationMinutes > 0.01) { // Avoid division by zero or tiny fractions
+          if (finalDurationMinutes > 0.01) {
               setKpm(Math.round(totalKeys / finalDurationMinutes));
           } else {
-               setKpm(0); // Set KPM to 0 if duration is too short
+               setKpm(0);
           }
       } else if (!isRecording) {
-          setKpm(0); // Reset KPM if stopped with no keys or no start time
+          setKpm(0);
       }
     }
 
@@ -72,9 +79,16 @@ export default function KeystrokeChroniclePage() {
     };
   }, [isRecording, startTime, totalKeys]);
 
+  // Calculate top keys when frequencies change
+  useEffect(() => {
+    const sortedKeys = Object.entries(keyFrequencies)
+      .map(([key, count]) => ({ key, count }))
+      .sort((a, b) => b.count - a.count);
+    setTopKeys(sortedKeys.slice(0, TOP_N_KEYS));
+  }, [keyFrequencies]);
+
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    // Prevent capturing keys if an input field is focused
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
         return;
     }
@@ -91,14 +105,19 @@ export default function KeystrokeChroniclePage() {
       }),
     };
 
-    // Update Metrics
     setTotalKeys((prev) => prev + 1);
     if (event.key === 'Backspace') {
       setBackspaceCount((prev) => prev + 1);
     }
 
-    // Add to the beginning of the array
-    setKeystrokes((prev) => [newEntry, ...prev.slice(0, 499)]); // Keep last 500 keystrokes
+    setKeystrokes((prev) => [newEntry, ...prev.slice(0, 499)]);
+
+    const displayKey = formatKeyDisplay(event.key, false);
+    setKeyFrequencies((prevFrequencies) => ({
+      ...prevFrequencies,
+      [displayKey]: (prevFrequencies[displayKey] || 0) + 1,
+    }));
+
   }, []);
 
 
@@ -106,17 +125,14 @@ export default function KeystrokeChroniclePage() {
     if (!isClient) return;
 
     if (isRecording) {
-      // Attach listener to window for global capture
       window.addEventListener('keydown', handleKeyDown);
       if (!startTime) {
-          setStartTime(Date.now()); // Set start time only if not already set
+          setStartTime(Date.now());
       }
     } else {
       window.removeEventListener('keydown', handleKeyDown);
-      // Don't reset startTime here, keep it for final KPM calculation
     }
 
-    // Cleanup listener on component unmount or when isRecording changes
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
@@ -128,12 +144,13 @@ export default function KeystrokeChroniclePage() {
     setIsRecording(nextRecordingState);
 
     if (nextRecordingState) {
-      // Reset metrics when starting
       setStartTime(Date.now());
       setTotalKeys(0);
       setBackspaceCount(0);
       setKpm(0);
-      setAnalysisResult(null); // Clear analysis
+      setKeyFrequencies({});
+      setTopKeys([]);
+      setAnalysisResult(null);
       setAnalysisError(null);
       toast({
         title: "Recording Started",
@@ -141,7 +158,6 @@ export default function KeystrokeChroniclePage() {
         duration: 3000,
       });
     } else {
-      // Stop recording: Keep metrics for display until cleared or restarted
       toast({
         title: "Recording Stopped",
         description: "Keystroke capture paused.",
@@ -163,7 +179,7 @@ export default function KeystrokeChroniclePage() {
 
     const logData = keystrokes
       .slice()
-      .reverse() // Chronological order for export
+      .reverse()
       .map(entry => `${entry.formattedTimestamp} - Key: ${formatKeyDisplay(entry.key, true)}`)
       .join('\n');
 
@@ -189,13 +205,14 @@ export default function KeystrokeChroniclePage() {
   const clearLogs = () => {
     if (!isClient) return;
     setKeystrokes([]);
-    setAnalysisResult(null); // Also clear analysis
+    setAnalysisResult(null);
     setAnalysisError(null);
-    // Reset metrics
     setStartTime(null);
     setTotalKeys(0);
     setBackspaceCount(0);
     setKpm(0);
+    setKeyFrequencies({});
+    setTopKeys([]);
     toast({
       title: "Logs & Metrics Cleared",
       description: "All captured data has been cleared.",
@@ -203,7 +220,6 @@ export default function KeystrokeChroniclePage() {
     });
   };
 
-  // Format key display for UI and export/analysis
   const formatKeyDisplay = (key: string, forExportOrAI: boolean = false) => {
     const displayMap: { [key: string]: string } = {
       ' ': forExportOrAI ? '[Space]' : '␣',
@@ -216,10 +232,10 @@ export default function KeystrokeChroniclePage() {
       'ArrowLeft': forExportOrAI ? '[ArrowLeft]' : '←',
       'ArrowRight': forExportOrAI ? '[ArrowRight]' : '→',
       'Escape': '[Esc]',
-      'Control': '[Ctrl]', // Generic Ctrl
-      'Alt': '[Alt]',       // Generic Alt
-      'Shift': '[Shift]',   // Generic Shift
-      'Meta': '[Meta]',     // Generic Meta/Win/Cmd
+      'Control': '[Ctrl]',
+      'Alt': '[Alt]',
+      'Shift': '[Shift]',
+      'Meta': '[Meta]',
       'CapsLock': '[CapsLock]',
       'NumLock': '[NumLock]',
       'ScrollLock': '[ScrollLock]',
@@ -230,11 +246,9 @@ export default function KeystrokeChroniclePage() {
       'PageDown': '[PageDown]',
       'PrintScreen': '[PrintScreen]',
       'Pause': '[Pause]',
-      // Add common function keys
       ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`F${i + 1}`, `[F${i + 1}]`])),
     };
 
-    // Handle specific versions like ControlLeft, ShiftRight etc.
     if (key.startsWith('Control') || key.startsWith('Alt') || key.startsWith('Shift') || key.startsWith('Meta') || key.startsWith('OS')) {
         return displayMap[key.replace(/Left|Right/, '')] ?? `[${key}]`;
     }
@@ -249,12 +263,11 @@ export default function KeystrokeChroniclePage() {
     setAnalysisResult(null);
     setAnalysisError(null);
 
-    // Get keys in chronological order and format for AI
     const keystrokeSequence = keystrokes
       .slice()
       .reverse()
       .map(entry => formatKeyDisplay(entry.key, true))
-      .join(' '); // Use space as a simple separator
+      .join(' ');
 
     try {
       const result = await analyzeKeystrokes({ keystrokeSequence });
@@ -346,7 +359,6 @@ export default function KeystrokeChroniclePage() {
 
       <main className="flex-grow p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
 
-        {/* Keystroke Monitor Card (Takes 2 columns on large screens) */}
         <Card className="lg:col-span-2 h-[75vh] flex flex-col shadow-lg rounded-lg border-border overflow-hidden bg-card/90 backdrop-blur-sm">
            <CardHeader className="border-b border-border/80">
             <CardTitle className="text-2xl text-foreground">Live Keystroke Monitor</CardTitle>
@@ -367,7 +379,7 @@ export default function KeystrokeChroniclePage() {
                 )}
                 {keystrokes.map((entry, index) => (
                   <div
-                    key={`${entry.timestamp}-${index}-${entry.key}`} // More robust key
+                    key={`${entry.timestamp}-${index}-${entry.key}`}
                     className="flex justify-between items-center p-2 rounded-md hover:bg-primary/10 transition-colors duration-100 ease-in-out border border-transparent hover:border-primary/20 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-2 duration-300"
                     aria-label={`Keystroke: ${formatKeyDisplay(entry.key, true)} at ${entry.formattedTimestamp}`}
                   >
@@ -380,9 +392,7 @@ export default function KeystrokeChroniclePage() {
           </CardContent>
         </Card>
 
-        {/* Metrics and Analysis Column (Takes 1 column on large screens) */}
-        <div className="flex flex-col gap-6 lg:col-span-1 h-[75vh] overflow-y-auto pr-2 pb-6 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-             {/* Live Metrics Card */}
+        <div className="flex flex-col gap-6 lg:col-span-1 h-[75vh] overflow-y-auto pr-2 pb-6 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent scrollbar-webkit">
             <Card className="shadow-lg rounded-lg border-border bg-card/90 backdrop-blur-sm">
               <CardHeader className="border-b border-border/80 pb-4">
                 <CardTitle className="text-xl text-foreground">Live Session Metrics</CardTitle>
@@ -413,8 +423,48 @@ export default function KeystrokeChroniclePage() {
               </CardContent>
             </Card>
 
+            {/* Most Frequent Keys Card */}
+            <Card className="shadow-lg rounded-lg border-border bg-card/90 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 border-b border-border/80">
+                <div className="space-y-1">
+                    <CardTitle className="text-xl text-foreground">Most Frequent Keys</CardTitle>
+                    <CardDescription className="text-muted-foreground">
+                    Top {TOP_N_KEYS} pressed keys this session.
+                    </CardDescription>
+                </div>
+                <ListOrdered className="h-5 w-5 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="p-4">
+                {!isClient ? (
+                  <div className="space-y-3 pt-2">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className="flex justify-between items-center">
+                        <Skeleton className="h-7 w-14 rounded-md" />
+                        <Skeleton className="h-5 w-24 rounded-md" />
+                      </div>
+                    ))}
+                  </div>
+                ) : topKeys.length > 0 ? (
+                  <ul className="space-y-3 pt-2">
+                    {topKeys.map((item, index) => (
+                      <li key={index} className="flex justify-between items-center text-sm">
+                        <Badge variant="outline" className="text-sm font-mono px-2 py-1 min-w-[50px] text-center shadow-sm border-primary/30 bg-primary/10 text-primary-foreground">{item.key}</Badge>
+                        <div className="text-right">
+                          <span className="font-semibold text-lg text-foreground tabular-nums">{item.count}</span>
+                          <span className="text-xs text-muted-foreground ml-1">presses</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-muted-foreground text-sm text-center py-6">
+                    {totalKeys === 0 && !isRecording ? "No key data recorded. Start recording." : "Start typing to see frequent keys."}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
 
-            {/* Analysis Card */}
+
             <Card className="shadow-lg rounded-lg border-border bg-card/90 backdrop-blur-sm">
               <CardHeader className="border-b border-border/80">
                 <CardTitle className="text-xl text-foreground">AI Session Analysis</CardTitle>
@@ -471,3 +521,6 @@ export default function KeystrokeChroniclePage() {
     </div>
   );
 }
+
+
+    
