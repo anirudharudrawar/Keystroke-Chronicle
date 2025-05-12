@@ -51,7 +51,7 @@ function getKeyCategory(key: string): KeystrokeCategory {
 
   // Numbers (top row and numpad keys that report as digits)
   if (key.length === 1 && /^[0-9]$/.test(key)) return 'Number';
-  
+
   if (/^Numpad[0-9]$/.test(key)) return 'Number';
   if (key === 'NumpadDecimal') return 'Symbol'; // Or 'Number' depending on preference
   if (key === 'NumpadEnter') return 'Whitespace';
@@ -75,7 +75,7 @@ function getKeyCategory(key: string): KeystrokeCategory {
 
   // Symbols & Punctuation
   if (key.length === 1 && /[~`!@#$%^&*()_\-+=[\]{}|\\;:'",<.>/?]/.test(key)) return 'Symbol';
-  
+
   return 'Other';
 }
 
@@ -155,7 +155,14 @@ export default function KeystrokeChroniclePage() {
 
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLButtonElement || (event.target as HTMLElement)?.closest('[role="dialog"]')) {
+    // Ignore input if focus is on an input element, button, or inside a dialog
+     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLButtonElement || (event.target as HTMLElement)?.closest('[role="dialog"]')) {
+        return;
+    }
+    // Ignore modifier keys themselves if they are the only key pressed (allow Ctrl+C etc.)
+    if (['Control', 'Shift', 'Alt', 'Meta', 'OS'].includes(event.key)) {
+        // Check if it's part of a combo - this is complex, basic check for now
+        // A more robust solution might track modifier state separately
         return;
     }
 
@@ -184,7 +191,7 @@ export default function KeystrokeChroniclePage() {
       [displayKey]: (prevFrequencies[displayKey] || 0) + 1,
     }));
 
-  }, []);
+  }, []); // No dependencies needed here
 
 
   useEffect(() => {
@@ -323,7 +330,7 @@ export default function KeystrokeChroniclePage() {
       'End': '[End]',
       'PageUp': '[PageUp]',
       'PageDown': '[PageDown]',
-      'PrintScreen': '[PrintScreen]',
+      'PrintScreen': '[PrtSc]',
       'Pause': '[Pause]',
       // Function keys F1-F12
       ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`F${i + 1}`, `[F${i + 1}]`])),
@@ -342,7 +349,7 @@ export default function KeystrokeChroniclePage() {
         const baseModifier = key.replace(/Left|Right/, '');
         return displayMap[baseModifier] ?? `[${key}]`; // Fallback to raw if not in map
     }
-    
+
     // For dead keys, event.key can be "Dead" or specific like "Dead^".
     if (key.startsWith('Dead')) return '[Dead]';
 
@@ -412,9 +419,10 @@ export default function KeystrokeChroniclePage() {
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">Keystroke Chronicle</h1>
         </div>
         <div className="flex items-center gap-3">
+          {/* Prominent Start/Stop Button */}
           <Button
             onClick={toggleRecording}
-            variant={isRecording ? "default" : "outline"}
+            variant={isRecording ? "destructive" : "default"} // Use destructive variant for stop action
             className="w-48 transition-colors duration-200 tabular-nums"
             disabled={!isClient}
             aria-live="polite"
@@ -422,9 +430,10 @@ export default function KeystrokeChroniclePage() {
             {isRecording ? <Pause className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
             {isRecording ? 'Stop Recording' : 'Start Recording'}
           </Button>
+          {/* Filter Button */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" disabled={!isClient}>
+              <Button variant="outline" disabled={!isClient} aria-label="Filter displayed keystrokes by category">
                 <ListFilter className="w-4 h-4 mr-2" />
                 Filter ({selectedCategories.size}/{ALL_CATEGORIES.length})
               </Button>
@@ -466,12 +475,14 @@ export default function KeystrokeChroniclePage() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          {/* Analyze Button */}
            <Button
             onClick={handleAnalyze}
             variant="outline"
             disabled={!isClient || keystrokes.length === 0 || isAnalyzing || isRecording}
             aria-disabled={!isClient || keystrokes.length === 0 || isAnalyzing || isRecording}
             title={isRecording ? "Stop recording to analyze" : (keystrokes.length === 0 ? "Record keystrokes to analyze" : "Analyze the current session")}
+            aria-label="Analyze recorded keystroke session"
           >
             {isAnalyzing ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -480,20 +491,25 @@ export default function KeystrokeChroniclePage() {
             )}
             Analyze Session
           </Button>
+          {/* Export Button */}
           <Button
             onClick={exportLogs}
             variant="outline"
             disabled={!isClient || keystrokes.length === 0}
             aria-disabled={!isClient || keystrokes.length === 0}
+            aria-label="Export recorded keystrokes to a text file"
           >
             <Download className="w-4 h-4 mr-2" />
             Export Logs
           </Button>
+          {/* Clear Button */}
           <Button
             onClick={clearLogs}
-            variant="destructive"
+            variant="outline" // Changed from destructive to outline for less emphasis, but keep icon
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
             disabled={!isClient || (keystrokes.length === 0 && totalKeys === 0)} // Disable if no data at all
             aria-disabled={!isClient || (keystrokes.length === 0 && totalKeys === 0)}
+            aria-label="Clear all recorded keystrokes, metrics, and analysis results"
           >
             <Trash2 className="w-4 h-4 mr-2" />
             Clear Data
@@ -509,30 +525,33 @@ export default function KeystrokeChroniclePage() {
             <CardDescription className="text-muted-foreground">
               {isRecording ? "Actively recording keystrokes..." : "Recording is paused. Press 'Start Recording' to begin."}
               {!isClient && " (Initializing...)"}
-              {isClient && keystrokes.length > 0 && ` Displaying ${filteredKeystrokes.length} of ${keystrokes.length} recorded keystrokes.`}
+              {isClient && keystrokes.length > 0 && ` Displaying ${filteredKeystrokes.length} of ${keystrokes.length} recorded keystrokes based on filter.`}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-grow p-0 overflow-hidden">
             <ScrollArea className="h-full w-full">
               <div className="p-6 space-y-2 text-sm font-mono">
                 {keystrokes.length === 0 && (
-                  <div className="flex items-center justify-center h-full pt-10 text-center">
+                  <div className="flex flex-col items-center justify-center h-full pt-10 text-center">
+                    <Keyboard size={48} className="text-muted-foreground mb-4"/>
                     <p className="text-muted-foreground text-lg">
-                      {isRecording ? "Waiting for first keystroke..." : "No keystrokes recorded yet. Start recording to capture input."}
+                      {isRecording ? "Waiting for first keystroke..." : "No keystrokes recorded yet. Press 'Start Recording' to capture input."}
                     </p>
                   </div>
                 )}
                 {filteredKeystrokes.length === 0 && keystrokes.length > 0 && (
-                  <div className="flex items-center justify-center h-full pt-10 text-center">
+                  <div className="flex flex-col items-center justify-center h-full pt-10 text-center">
+                    <ListFilter size={48} className="text-muted-foreground mb-4"/>
                     <p className="text-muted-foreground text-lg">
-                      No keystrokes match the current filter criteria. Adjust filters or record more data.
+                      No keystrokes match the current filter criteria.
                     </p>
+                    <p className="text-muted-foreground text-sm">Adjust filters or record more data.</p>
                   </div>
                 )}
                 {filteredKeystrokes.map((entry, index) => (
                   <div
                     key={`${entry.timestamp}-${index}-${entry.key}`} // index is from filteredKeystrokes, timestamp and key provide uniqueness
-                    className="flex justify-between items-center p-2 rounded-md hover:bg-primary/10 transition-colors duration-100 ease-in-out border border-transparent hover:border-primary/20 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-2 duration-300"
+                    className="flex justify-between items-center p-2 rounded-md hover:bg-primary/10 transition-colors duration-100 ease-in-out border border-transparent hover:border-primary/20 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1"
                     aria-label={`Keystroke: ${formatKeyDisplay(entry.key, true)} at ${entry.formattedTimestamp}`}
                   >
                     <span className="text-muted-foreground tabular-nums text-xs">{entry.formattedTimestamp}</span>
@@ -589,10 +608,10 @@ export default function KeystrokeChroniclePage() {
               <CardContent className="p-4">
                 {!isClient ? (
                   <div className="space-y-3 pt-2">
-                    {Array.from({ length: 3 }).map((_, i) => (
+                    {Array.from({ length: TOP_N_KEYS }).map((_, i) => ( // Show skeletons for top N keys
                       <div key={i} className="flex justify-between items-center">
-                        <Skeleton className="h-7 w-14 rounded-md" />
-                        <Skeleton className="h-5 w-24 rounded-md" />
+                        <Skeleton className="h-7 w-16 rounded-md" />
+                        <Skeleton className="h-5 w-28 rounded-md" />
                       </div>
                     ))}
                   </div>
@@ -633,10 +652,10 @@ export default function KeystrokeChroniclePage() {
                     <Skeleton className="h-4 w-4/6" />
                   </div>
                 ) : analysisError ? (
-                    <div className="flex items-center text-destructive">
-                        <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+                    <div className="flex items-start text-destructive p-4 bg-destructive/10 rounded-md border border-destructive/30">
+                        <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" />
                         <div>
-                            <p className="font-semibold">Analysis Error</p>
+                            <p className="font-semibold mb-1">Analysis Error</p>
                             <p className="text-sm">{analysisError}</p>
                         </div>
                     </div>
