@@ -52,49 +52,49 @@
   }
 
   .dark {
-    --background: 0 0% 20%; /* Dark Gray #333333 */
-    --foreground: 0 0% 86.7%; /* Light Gray #DDDDDD */
+    --background: 220 10% 10%; /* Very dark, cool blue-grey */
+    --foreground: 220 10% 85%; /* Light, cool grey for text */
 
-    --card: 0 0% 20%; /* Match background */
-    --card-foreground: 0 0% 86.7%; /* Match foreground */
+    --card: 220 10% 13%; /* Slightly lighter than background, still dark */
+    --card-foreground: 220 10% 85%; /* Same as main foreground */
 
-    --popover: 0 0% 20%; /* Match background */
-    --popover-foreground: 0 0% 86.7%; /* Match foreground */
+    --popover: 220 10% 10%; /* Same as background */
+    --popover-foreground: 220 10% 85%; /* Same as main foreground */
 
-    --primary: 180 100% 25.1%; /* Teal #008080 */
-    --primary-foreground: 0 0% 98%; /* Light text for on primary buttons */
+    --primary: 200 90% 55%; /* Vibrant, professional blue */
+    --primary-foreground: 220 10% 95%; /* Very light, almost white, for text on primary buttons */
 
-    --secondary: 0 0% 25%; /* Slightly lighter gray for secondary elements #404040 */
-    --secondary-foreground: 0 0% 86.7%; /* Foreground on secondary */
+    --secondary: 220 10% 20%; /* A medium dark cool grey */
+    --secondary-foreground: 220 10% 75%; /* Slightly dimmer text for secondary elements */
 
-    --muted: 0 0% 25%; /* Same as secondary for muted background */
-    --muted-foreground: 0 0% 55%; /* #8c8c8c - for less prominent text */
+    --muted: 220 10% 18%; /* Subtle muted background */
+    --muted-foreground: 220 10% 50%; /* Greyed-out text */
 
-    --accent: 180 100% 25.1%; /* Teal #008080 for highlights */
-    --accent-foreground: 0 0% 98%; /* Light text for on accent elements */
+    --accent: 200 80% 65%; /* A lighter shade of the primary for accents */
+    --accent-foreground: 220 10% 95%; /* Text on accent */
 
-    --destructive: 0 70% 50%; /* A slightly less vibrant red for dark mode, e.g. #D94D4D */
-    --destructive-foreground: 0 0% 98%; /* Default destructive foreground fine */
+    --destructive: 0 70% 55%; /* A clear, but not overly garish, red */
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 0 0% 27%; /* #454545 - A border that is visible but not too stark */
-    --input: 0 0% 27%; /* Same as border for input background */
-    --ring: 180 100% 35.1%; /* Teal-based ring, slightly brighter */
+    --border: 220 10% 25%; /* Subtle borders */
+    --input: 220 10% 22%; /* Input background, slightly distinct from card/bg */
+    --ring: 200 90% 60%; /* Focus ring, related to primary */
     
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    --chart-1: 200 90% 50%;
+    --chart-2: 200 70% 60%;
+    --chart-3: 200 50% 70%;
+    --chart-4: 210 30% 40%;
+    --chart-5: 30 80% 60%;
 
     /* Dark sidebar vars */
-    --sidebar-background: 0 0% 15%; 
-    --sidebar-foreground: 0 0% 86.7%;
-    --sidebar-primary: 180 100% 30.1%; 
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 0 0% 22%;
-    --sidebar-accent-foreground: 0 0% 86.7%;
-    --sidebar-border: 0 0% 27%;
-    --sidebar-ring: 180 100% 35.1%;
+    --sidebar-background: 220 10% 12%; 
+    --sidebar-foreground: 220 10% 80%;
+    --sidebar-primary: 200 90% 55%; 
+    --sidebar-primary-foreground: 220 10% 95%;
+    --sidebar-accent: 220 10% 20%;
+    --sidebar-accent-foreground: 220 10% 90%;
+    --sidebar-border: 220 10% 23%;
+    --sidebar-ring: 200 90% 60%;
   }
 }
 
@@ -104,7 +104,6 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Removed: font-family: Arial, Helvetica, sans-serif; */
     /* Font will be handled by layout.tsx and tailwind.config.ts */
   }
 }

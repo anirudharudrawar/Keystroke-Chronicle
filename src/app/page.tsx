@@ -36,7 +36,7 @@ export default function KeystrokeChroniclePage() {
       }),
     };
     setKeystrokes((prev) => [newEntry, ...prev.slice(0, 499)]); // Keep last 500 keystrokes
-  }, []); // setKeystrokes is stable
+  }, []);
 
   useEffect(() => {
     if (!isClient) return;
@@ -80,7 +80,7 @@ export default function KeystrokeChroniclePage() {
       .slice() 
       .reverse() // Chronological order for export
       .map(entry => `${entry.formattedTimestamp} - Key: ${formatKeyDisplay(entry.key, true)}`)
-      .join('\n'); // Use \n for newline characters in the text file
+      .join('\n');
     
     const blob = new Blob([logData], { type: 'text/plain;charset=utf-8' });
     const dateStr = new Date().toISOString().split('T')[0];
@@ -112,7 +112,6 @@ export default function KeystrokeChroniclePage() {
   };
 
   const formatKeyDisplay = (key: string, forExport: boolean = false) => {
-    // For better readability in live monitor
     const displayMap: { [key: string]: string } = {
       ' ': forExport ? '[Space]' : '␣',
       'Enter': '[Enter]',
@@ -130,9 +129,9 @@ export default function KeystrokeChroniclePage() {
       'AltRight': '[Alt]',
       'ShiftLeft': '[Shift]',
       'ShiftRight': '[Shift]',
-      'MetaLeft': '[Meta]', // Cmd/Windows key
+      'MetaLeft': '[Meta]',
       'MetaRight': '[Meta]',
-      'OSLeft': '[OS]', // Some systems report OS key
+      'OSLeft': '[OS]',
       'OSRight': '[OS]',
     };
 
@@ -140,17 +139,16 @@ export default function KeystrokeChroniclePage() {
       return displayMap[key];
     }
 
-    // For function keys or other named keys not in map
     if (key.length > 1 && (key.match(/F[0-9]+/) || ['CapsLock', 'ScrollLock', 'NumLock', 'Insert', 'Home', 'End', 'PageUp', 'PageDown', 'PrintScreen', 'Pause'].includes(key))) {
         return `[${key}]`;
     }
     
-    return key; // For printable characters
+    return key;
   };
 
   return (
     <div className="flex flex-col min-h-screen">
-      <header className="sticky top-0 z-10 flex items-center justify-between p-4 border-b shadow-md bg-card">
+      <header className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b shadow-lg bg-card border-border">
         <div className="flex items-center gap-3">
           <Keyboard className="w-8 h-8 text-primary" />
           <h1 className="text-3xl font-semibold tracking-tight">Keystroke Chronicle</h1>
@@ -172,7 +170,7 @@ export default function KeystrokeChroniclePage() {
       </header>
 
       <main className="flex-grow p-6 overflow-hidden">
-        <Card className="h-full flex flex-col shadow-xl rounded-lg border-border">
+        <Card className="h-full flex flex-col shadow-lg rounded-lg border-border">
           <CardHeader className="border-b border-border">
             <CardTitle className="text-2xl">Live Keystroke Monitor</CardTitle>
             <CardDescription>
@@ -192,11 +190,11 @@ export default function KeystrokeChroniclePage() {
                 {keystrokes.map((entry, index) => (
                   <div 
                     key={`${entry.timestamp}-${index}-${entry.key}`} 
-                    className="flex justify-between items-center p-2 rounded-md hover:bg-secondary/50 transition-colors duration-100 ease-in-out border border-transparent hover:border-primary/30"
+                    className="flex justify-between items-center p-2 rounded-md hover:bg-secondary/80 transition-colors duration-100 ease-in-out border border-transparent hover:border-primary/30"
                     aria-label={`Keystroke: ${formatKeyDisplay(entry.key, true)} at ${entry.formattedTimestamp}`}
                   >
                     <span className="text-muted-foreground tabular-nums">{entry.formattedTimestamp}</span>
-                    <span className="font-semibold text-base px-3 py-1 bg-muted rounded shadow-sm min-w-[80px] text-center border border-border">{formatKeyDisplay(entry.key)}</span>
+                    <span className="font-semibold text-base px-3 py-1 bg-secondary rounded min-w-[80px] text-center border border-border">{formatKeyDisplay(entry.key)}</span>
                   </div>
                 ))}
               </div>
