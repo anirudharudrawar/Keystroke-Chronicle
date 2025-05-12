@@ -1,11 +1,10 @@
-
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Keyboard, Play, Pause, Download, Trash2, BrainCircuit, Loader2, AlertCircle } from 'lucide-react';
+import { Keyboard, Play, Pause, Download, Trash2, BrainCircuit, Loader2, AlertCircle, Gauge, Timer, Delete } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzeKeystrokes, type AnalyzeKeystrokesOutput } from '@/ai/flows/analyze-keystrokes-flow';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,20 +24,60 @@ export default function KeystrokeChroniclePage() {
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
+  // Metrics State
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [totalKeys, setTotalKeys] = useState<number>(0);
+  const [backspaceCount, setBackspaceCount] = useState<number>(0);
+  const [kpm, setKpm] = useState<number>(0);
+
   const { toast } = useToast();
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Update KPM periodically
+  useEffect(() => {
+    if (isRecording && startTime) {
+      intervalRef.current = setInterval(() => {
+        const now = Date.now();
+        const durationMinutes = (now - startTime) / (1000 * 60);
+        if (durationMinutes > 0) {
+          setKpm(Math.round(totalKeys / durationMinutes));
+        }
+      }, 2000); // Update every 2 seconds
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      // Optionally calculate final KPM when stopping
+      if (!isRecording && startTime && totalKeys > 0) {
+          const finalDurationMinutes = (Date.now() - startTime) / (1000 * 60);
+          if (finalDurationMinutes > 0.01) { // Avoid division by zero or tiny fractions
+              setKpm(Math.round(totalKeys / finalDurationMinutes));
+          } else {
+               setKpm(0); // Set KPM to 0 if duration is too short
+          }
+      } else if (!isRecording) {
+          setKpm(0); // Reset KPM if stopped with no keys or no start time
+      }
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [isRecording, startTime, totalKeys]);
+
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     // Prevent capturing keys if an input field is focused
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
         return;
     }
-
-    // Basic filter for modifier keys themselves if needed, though often captured for context
-    // if (['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) return;
 
     const now = Date.now();
     const newEntry: KeystrokeEntry = {
@@ -51,6 +90,13 @@ export default function KeystrokeChroniclePage() {
         fractionalSecondDigits: 3
       }),
     };
+
+    // Update Metrics
+    setTotalKeys((prev) => prev + 1);
+    if (event.key === 'Backspace') {
+      setBackspaceCount((prev) => prev + 1);
+    }
+
     // Add to the beginning of the array
     setKeystrokes((prev) => [newEntry, ...prev.slice(0, 499)]); // Keep last 500 keystrokes
   }, []);
@@ -62,30 +108,46 @@ export default function KeystrokeChroniclePage() {
     if (isRecording) {
       // Attach listener to window for global capture
       window.addEventListener('keydown', handleKeyDown);
+      if (!startTime) {
+          setStartTime(Date.now()); // Set start time only if not already set
+      }
     } else {
       window.removeEventListener('keydown', handleKeyDown);
+      // Don't reset startTime here, keep it for final KPM calculation
     }
 
     // Cleanup listener on component unmount or when isRecording changes
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isRecording, isClient, handleKeyDown]);
+  }, [isRecording, isClient, handleKeyDown, startTime]);
 
   const toggleRecording = () => {
     if (!isClient) return;
-    setIsRecording((prev) => {
-      const newState = !prev;
+    const nextRecordingState = !isRecording;
+    setIsRecording(nextRecordingState);
+
+    if (nextRecordingState) {
+      // Reset metrics when starting
+      setStartTime(Date.now());
+      setTotalKeys(0);
+      setBackspaceCount(0);
+      setKpm(0);
+      setAnalysisResult(null); // Clear analysis
+      setAnalysisError(null);
       toast({
-        title: newState ? "Recording Started" : "Recording Stopped",
-        description: newState ? "Capturing keystrokes..." : "Keystroke capture paused.",
+        title: "Recording Started",
+        description: "Capturing keystrokes and metrics...",
         duration: 3000,
       });
-      // Clear analysis when recording starts/stops
-      setAnalysisResult(null);
-      setAnalysisError(null);
-      return newState;
-    });
+    } else {
+      // Stop recording: Keep metrics for display until cleared or restarted
+      toast({
+        title: "Recording Stopped",
+        description: "Keystroke capture paused.",
+        duration: 3000,
+      });
+    }
   };
 
   const exportLogs = () => {
@@ -129,9 +191,14 @@ export default function KeystrokeChroniclePage() {
     setKeystrokes([]);
     setAnalysisResult(null); // Also clear analysis
     setAnalysisError(null);
+    // Reset metrics
+    setStartTime(null);
+    setTotalKeys(0);
+    setBackspaceCount(0);
+    setKpm(0);
     toast({
-      title: "Logs Cleared",
-      description: "All captured keystrokes and analysis have been cleared.",
+      title: "Logs & Metrics Cleared",
+      description: "All captured data has been cleared.",
       duration: 3000,
     });
   };
@@ -212,6 +279,18 @@ export default function KeystrokeChroniclePage() {
     }
   };
 
+  const MetricCard = ({ title, value, icon: Icon }: { title: string; value: string | number; icon: React.ElementType }) => (
+    <Card className="bg-secondary/50 shadow-inner border-border/50">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold text-foreground tabular-nums">{value}</div>
+      </CardContent>
+    </Card>
+  );
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-background to-secondary/30">
       <header className="sticky top-0 z-30 flex items-center justify-between px-6 py-4 border-b shadow-md backdrop-blur-md bg-card/80 border-border">
@@ -235,6 +314,7 @@ export default function KeystrokeChroniclePage() {
             variant="outline"
             disabled={!isClient || keystrokes.length === 0 || isAnalyzing || isRecording}
             aria-disabled={!isClient || keystrokes.length === 0 || isAnalyzing || isRecording}
+            title={isRecording ? "Stop recording to analyze" : (keystrokes.length === 0 ? "Record keystrokes to analyze" : "Analyze the current session")}
           >
             {isAnalyzing ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -255,18 +335,19 @@ export default function KeystrokeChroniclePage() {
           <Button
             onClick={clearLogs}
             variant="destructive"
-            disabled={!isClient || keystrokes.length === 0}
-            aria-disabled={!isClient || keystrokes.length === 0}
+            disabled={!isClient || (keystrokes.length === 0 && totalKeys === 0)}
+            aria-disabled={!isClient || (keystrokes.length === 0 && totalKeys === 0)}
           >
             <Trash2 className="w-4 h-4 mr-2" />
-            Clear Logs
+            Clear Data
           </Button>
         </div>
       </header>
 
-      <main className="flex-grow p-6 space-y-6 overflow-hidden">
-        {/* Keystroke Monitor Card */}
-        <Card className="h-[60vh] flex flex-col shadow-lg rounded-lg border-border overflow-hidden bg-card/90 backdrop-blur-sm">
+      <main className="flex-grow p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
+
+        {/* Keystroke Monitor Card (Takes 2 columns on large screens) */}
+        <Card className="lg:col-span-2 h-[75vh] flex flex-col shadow-lg rounded-lg border-border overflow-hidden bg-card/90 backdrop-blur-sm">
            <CardHeader className="border-b border-border/80">
             <CardTitle className="text-2xl text-foreground">Live Keystroke Monitor</CardTitle>
             <CardDescription className="text-muted-foreground">
@@ -299,54 +380,93 @@ export default function KeystrokeChroniclePage() {
           </CardContent>
         </Card>
 
-        {/* Analysis Card */}
-        <Card className="shadow-lg rounded-lg border-border overflow-hidden bg-card/90 backdrop-blur-sm">
-          <CardHeader className="border-b border-border/80">
-            <CardTitle className="text-2xl text-foreground">Session Analysis</CardTitle>
-            <CardDescription className="text-muted-foreground">
-              Insights based on the recorded keystroke patterns. Analysis runs on the current recorded session data.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-6 min-h-[150px]">
-            {isAnalyzing ? (
-              <div className="space-y-4">
-                <Skeleton className="h-6 w-3/4" />
-                <Skeleton className="h-4 w-1/2" />
-                <Skeleton className="h-4 w-5/6" />
-                <Skeleton className="h-4 w-4/6" />
-              </div>
-            ) : analysisError ? (
-                <div className="flex items-center text-destructive">
-                    <AlertCircle className="w-5 h-5 mr-2" />
-                    <div>
-                        <p className="font-semibold">Analysis Error</p>
-                        <p className="text-sm">{analysisError}</p>
-                    </div>
-                </div>
-            ) : analysisResult ? (
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-semibold text-lg mb-1 text-foreground">Summary</h4>
-                  <p className="text-muted-foreground">{analysisResult.summary}</p>
-                </div>
-                {analysisResult.identifiedPatterns && analysisResult.identifiedPatterns.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold text-lg mb-2 text-foreground">Identified Patterns</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {analysisResult.identifiedPatterns.map((pattern, index) => (
-                        <Badge key={index} variant="secondary" className="text-sm">{pattern}</Badge>
-                      ))}
-                    </div>
-                  </div>
+        {/* Metrics and Analysis Column (Takes 1 column on large screens) */}
+        <div className="flex flex-col gap-6 lg:col-span-1 h-[75vh] overflow-y-auto pr-2 pb-6 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+             {/* Live Metrics Card */}
+            <Card className="shadow-lg rounded-lg border-border bg-card/90 backdrop-blur-sm">
+              <CardHeader className="border-b border-border/80 pb-4">
+                <CardTitle className="text-xl text-foreground">Live Session Metrics</CardTitle>
+                <CardDescription className="text-muted-foreground">
+                  Real-time statistics for the current recording session.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-4 space-y-3">
+                {isClient ? (
+                    <>
+                        <MetricCard title="Keystrokes Per Minute (KPM)" value={isRecording || totalKeys > 0 ? kpm : '--'} icon={Gauge} />
+                        <MetricCard title="Total Keystrokes" value={isRecording || totalKeys > 0 ? totalKeys : '--'} icon={Keyboard} />
+                        <MetricCard title="Backspace Count" value={isRecording || totalKeys > 0 ? backspaceCount : '--'} icon={Delete} />
+                    </>
+                ) : (
+                   <div className="space-y-3">
+                       <Skeleton className="h-20 w-full" />
+                       <Skeleton className="h-20 w-full" />
+                       <Skeleton className="h-20 w-full" />
+                   </div>
                 )}
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-center pt-8">
-                {keystrokes.length > 0 ? "Click 'Analyze Session' to generate insights from the recorded keystrokes." : "Record some keystrokes first, then click 'Analyze Session'."}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+                 {!isRecording && totalKeys > 0 && (
+                     <p className="text-xs text-center text-muted-foreground pt-2">Metrics from the last session. Start recording for live updates.</p>
+                 )}
+                 {!isRecording && totalKeys === 0 && (
+                      <p className="text-xs text-center text-muted-foreground pt-2">Start recording to see live metrics.</p>
+                 )}
+              </CardContent>
+            </Card>
+
+
+            {/* Analysis Card */}
+            <Card className="shadow-lg rounded-lg border-border bg-card/90 backdrop-blur-sm">
+              <CardHeader className="border-b border-border/80">
+                <CardTitle className="text-xl text-foreground">AI Session Analysis</CardTitle>
+                <CardDescription className="text-muted-foreground">
+                 AI-powered insights based on recorded keystroke patterns.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-6 min-h-[150px]">
+                {isAnalyzing ? (
+                  <div className="space-y-4">
+                    <Skeleton className="h-6 w-3/4" />
+                    <Skeleton className="h-4 w-1/2" />
+                    <Skeleton className="h-4 w-5/6" />
+                    <Skeleton className="h-4 w-4/6" />
+                  </div>
+                ) : analysisError ? (
+                    <div className="flex items-center text-destructive">
+                        <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+                        <div>
+                            <p className="font-semibold">Analysis Error</p>
+                            <p className="text-sm">{analysisError}</p>
+                        </div>
+                    </div>
+                ) : analysisResult ? (
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-semibold text-lg mb-1 text-foreground">Summary</h4>
+                      <p className="text-muted-foreground">{analysisResult.summary}</p>
+                    </div>
+                    {analysisResult.identifiedPatterns && analysisResult.identifiedPatterns.length > 0 && (
+                      <div>
+                        <h4 className="font-semibold text-lg mb-2 text-foreground">Identified Patterns</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {analysisResult.identifiedPatterns.map((pattern, index) => (
+                            <Badge key={index} variant="secondary" className="text-sm">{pattern}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-center pt-8">
+                     {isRecording
+                        ? "Stop recording before analyzing the session."
+                        : keystrokes.length > 0
+                            ? "Click 'Analyze Session' to generate insights."
+                            : "Record keystrokes first, then click 'Analyze Session'."}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+        </div>
       </main>
     </div>
   );
