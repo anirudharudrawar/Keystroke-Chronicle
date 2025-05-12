@@ -363,6 +363,12 @@ export default function KeystrokeChroniclePage() {
     setIsAnalyzing(true);
     setAnalysisResult(null);
     setAnalysisError(null);
+    toast({
+      title: "Analysis Started",
+      description: "Sending keystroke data for analysis...",
+      duration: 3000, // Shorter duration, as it's just an indicator
+    });
+
 
     // Use ALL keystrokes for analysis, not filtered ones
     const keystrokeSequence = keystrokes
@@ -417,6 +423,7 @@ export default function KeystrokeChroniclePage() {
         <div className="flex items-center gap-3">
           <Keyboard className="w-8 h-8 text-primary" />
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">Keystroke Chronicle</h1>
+          {!isClient && <Badge variant="outline">Initializing...</Badge>}
         </div>
         <div className="flex items-center gap-3">
           {/* Prominent Start/Stop Button */}
@@ -426,6 +433,7 @@ export default function KeystrokeChroniclePage() {
             className="w-48 transition-colors duration-200 tabular-nums"
             disabled={!isClient}
             aria-live="polite"
+            aria-label={isRecording ? 'Stop recording keystrokes' : 'Start recording keystrokes'}
           >
             {isRecording ? <Pause className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
             {isRecording ? 'Stop Recording' : 'Start Recording'}
@@ -450,6 +458,7 @@ export default function KeystrokeChroniclePage() {
                     setSelectedCategories(new Set());
                   }
                 }}
+                aria-label={selectedCategories.size === ALL_CATEGORIES.length && selectedCategories.size > 0 ? 'Deselect all categories' : 'Select all categories'}
               >
                 {selectedCategories.size === ALL_CATEGORIES.length && selectedCategories.size > 0 ? 'Deselect All' : 'Select All'}
               </DropdownMenuCheckboxItem>
@@ -469,6 +478,7 @@ export default function KeystrokeChroniclePage() {
                       return next;
                     });
                   }}
+                  aria-label={`Toggle filter for ${category} keystrokes`}
                 >
                   {category}
                 </DropdownMenuCheckboxItem>
@@ -485,11 +495,11 @@ export default function KeystrokeChroniclePage() {
             aria-label="Analyze recorded keystroke session"
           >
             {isAnalyzing ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden="true" />
             ) : (
-              <BrainCircuit className="w-4 h-4 mr-2" />
+              <BrainCircuit className="w-4 h-4 mr-2" aria-hidden="true" />
             )}
-            Analyze Session
+            {isAnalyzing ? 'Analyzing...' : 'Analyze Session'}
           </Button>
           {/* Export Button */}
           <Button
@@ -499,7 +509,7 @@ export default function KeystrokeChroniclePage() {
             aria-disabled={!isClient || keystrokes.length === 0}
             aria-label="Export recorded keystrokes to a text file"
           >
-            <Download className="w-4 h-4 mr-2" />
+            <Download className="w-4 h-4 mr-2" aria-hidden="true" />
             Export Logs
           </Button>
           {/* Clear Button */}
@@ -511,7 +521,7 @@ export default function KeystrokeChroniclePage() {
             aria-disabled={!isClient || (keystrokes.length === 0 && totalKeys === 0)}
             aria-label="Clear all recorded keystrokes, metrics, and analysis results"
           >
-            <Trash2 className="w-4 h-4 mr-2" />
+            <Trash2 className="w-4 h-4 mr-2" aria-hidden="true" />
             Clear Data
           </Button>
         </div>
@@ -522,10 +532,11 @@ export default function KeystrokeChroniclePage() {
         <Card className="lg:col-span-2 h-[75vh] flex flex-col shadow-lg rounded-lg border-border overflow-hidden bg-card/90 backdrop-blur-sm">
            <CardHeader className="border-b border-border/80">
             <CardTitle className="text-2xl text-foreground">Live Keystroke Monitor</CardTitle>
-            <CardDescription className="text-muted-foreground">
+            <CardDescription className="text-muted-foreground" aria-live="polite">
               {isRecording ? "Actively recording keystrokes..." : "Recording is paused. Press 'Start Recording' to begin."}
               {!isClient && " (Initializing...)"}
               {isClient && keystrokes.length > 0 && ` Displaying ${filteredKeystrokes.length} of ${keystrokes.length} recorded keystrokes based on filter.`}
+              {isClient && keystrokes.length === 0 && !isRecording && " Ready to record."}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-grow p-0 overflow-hidden">
@@ -533,7 +544,7 @@ export default function KeystrokeChroniclePage() {
               <div className="p-6 space-y-2 text-sm font-mono">
                 {keystrokes.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-full pt-10 text-center">
-                    <Keyboard size={48} className="text-muted-foreground mb-4"/>
+                    <Keyboard size={48} className="text-muted-foreground mb-4" aria-hidden="true"/>
                     <p className="text-muted-foreground text-lg">
                       {isRecording ? "Waiting for first keystroke..." : "No keystrokes recorded yet. Press 'Start Recording' to capture input."}
                     </p>
@@ -541,7 +552,7 @@ export default function KeystrokeChroniclePage() {
                 )}
                 {filteredKeystrokes.length === 0 && keystrokes.length > 0 && (
                   <div className="flex flex-col items-center justify-center h-full pt-10 text-center">
-                    <ListFilter size={48} className="text-muted-foreground mb-4"/>
+                    <ListFilter size={48} className="text-muted-foreground mb-4" aria-hidden="true"/>
                     <p className="text-muted-foreground text-lg">
                       No keystrokes match the current filter criteria.
                     </p>
@@ -567,8 +578,8 @@ export default function KeystrokeChroniclePage() {
             <Card className="shadow-lg rounded-lg border-border bg-card/90 backdrop-blur-sm">
               <CardHeader className="border-b border-border/80 pb-4">
                 <CardTitle className="text-xl text-foreground">Live Session Metrics</CardTitle>
-                <CardDescription className="text-muted-foreground">
-                  Real-time statistics for the current recording session. Based on all captured keystrokes.
+                <CardDescription className="text-muted-foreground" aria-live="polite">
+                  {isRecording ? "Real-time statistics for the current recording session." : "Statistics from the last recording session."} Based on all captured keystrokes.
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-4 space-y-3">
@@ -586,10 +597,10 @@ export default function KeystrokeChroniclePage() {
                    </div>
                 )}
                  {!isRecording && totalKeys > 0 && (
-                     <p className="text-xs text-center text-muted-foreground pt-2">Metrics from the last session. Start recording for live updates.</p>
+                     <p className="text-xs text-center text-muted-foreground pt-2" aria-live="polite">Metrics from the last session. Start recording for live updates.</p>
                  )}
-                 {!isRecording && totalKeys === 0 && (
-                      <p className="text-xs text-center text-muted-foreground pt-2">Start recording to see live metrics.</p>
+                 {!isRecording && totalKeys === 0 && !analysisResult && !analysisError && ( // Only show if no analysis result/error either
+                      <p className="text-xs text-center text-muted-foreground pt-2" aria-live="polite">Start recording to see live metrics.</p>
                  )}
               </CardContent>
             </Card>
@@ -603,7 +614,7 @@ export default function KeystrokeChroniclePage() {
                     Top {TOP_N_KEYS} pressed keys this session (all types).
                     </CardDescription>
                 </div>
-                <ListOrdered className="h-5 w-5 text-muted-foreground" />
+                <ListOrdered className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
               </CardHeader>
               <CardContent className="p-4">
                 {!isClient ? (
@@ -618,7 +629,7 @@ export default function KeystrokeChroniclePage() {
                 ) : topKeys.length > 0 ? (
                   <ul className="space-y-3 pt-2">
                     {topKeys.map((item, index) => (
-                      <li key={index} className="flex justify-between items-center text-sm">
+                      <li key={index} className="flex justify-between items-center text-sm" aria-label={`${item.key} pressed ${item.count} times`}>
                         <Badge variant="outline" className="text-sm font-mono px-2 py-1 min-w-[50px] text-center shadow-sm border-primary/30 bg-primary/10 text-primary-foreground">{item.key}</Badge>
                         <div className="text-right">
                           <span className="font-semibold text-lg text-foreground tabular-nums">{item.count}</span>
@@ -628,7 +639,7 @@ export default function KeystrokeChroniclePage() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-muted-foreground text-sm text-center py-6">
+                  <p className="text-muted-foreground text-sm text-center py-6" aria-live="polite">
                     {totalKeys === 0 && !isRecording ? "No key data recorded. Start recording." : "Start typing to see frequent keys."}
                   </p>
                 )}
@@ -645,22 +656,26 @@ export default function KeystrokeChroniclePage() {
               </CardHeader>
               <CardContent className="p-6 min-h-[150px]">
                 {isAnalyzing ? (
-                  <div className="space-y-4">
-                    <Skeleton className="h-6 w-3/4" />
-                    <Skeleton className="h-4 w-1/2" />
-                    <Skeleton className="h-4 w-5/6" />
-                    <Skeleton className="h-4 w-4/6" />
+                  <div className="space-y-4" aria-live="polite">
+                    <p className="text-center text-muted-foreground flex items-center justify-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true"/>
+                        Analyzing patterns...
+                    </p>
+                    <Skeleton className="h-6 w-3/4 mx-auto" />
+                    <Skeleton className="h-4 w-1/2 mx-auto" />
+                    <Skeleton className="h-4 w-5/6 mx-auto" />
+                    <Skeleton className="h-4 w-4/6 mx-auto" />
                   </div>
                 ) : analysisError ? (
-                    <div className="flex items-start text-destructive p-4 bg-destructive/10 rounded-md border border-destructive/30">
-                        <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" />
+                    <div role="alert" className="flex items-start text-destructive p-4 bg-destructive/10 rounded-md border border-destructive/30">
+                        <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" aria-hidden="true" />
                         <div>
                             <p className="font-semibold mb-1">Analysis Error</p>
                             <p className="text-sm">{analysisError}</p>
                         </div>
                     </div>
                 ) : analysisResult ? (
-                  <div className="space-y-4">
+                  <div className="space-y-4" aria-live="polite">
                     <div>
                       <h4 className="font-semibold text-lg mb-1 text-foreground">Summary</h4>
                       <p className="text-muted-foreground">{analysisResult.summary}</p>
@@ -677,7 +692,7 @@ export default function KeystrokeChroniclePage() {
                     )}
                   </div>
                 ) : (
-                  <p className="text-muted-foreground text-center pt-8">
+                  <p className="text-muted-foreground text-center pt-8" aria-live="polite">
                      {isRecording
                         ? "Stop recording before analyzing the session."
                         : keystrokes.length > 0
