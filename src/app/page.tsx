@@ -5,17 +5,80 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Keyboard, Play, Pause, Download, Trash2, BrainCircuit, Loader2, AlertCircle, Gauge, Delete, ListOrdered } from 'lucide-react';
+import { Keyboard, Play, Pause, Download, Trash2, BrainCircuit, Loader2, AlertCircle, Gauge, Delete, ListOrdered, ListFilter } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzeKeystrokes, type AnalyzeKeystrokesOutput } from '@/ai/flows/analyze-keystrokes-flow';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+
 
 interface KeystrokeEntry {
   key: string;
   timestamp: number;
   formattedTimestamp: string;
 }
+
+type KeystrokeCategory =
+  | 'Letter'
+  | 'Number'
+  | 'Symbol'
+  | 'Whitespace'
+  | 'Navigation'
+  | 'Modifier'
+  | 'Function'
+  | 'Editing'
+  | 'System'
+  | 'Other';
+
+const ALL_CATEGORIES: KeystrokeCategory[] = [
+  'Letter', 'Number', 'Symbol', 'Whitespace', 'Navigation', 'Modifier', 'Function', 'Editing', 'System', 'Other'
+];
+
+function getKeyCategory(key: string): KeystrokeCategory {
+  // Modifiers (check first as they can be part of other keys like Ctrl+C)
+  if (key.startsWith('Shift') || key.startsWith('Control') || key.startsWith('Alt') || key.startsWith('Meta') || key.startsWith('OS')) return 'Modifier';
+
+  // Letters
+  if (key.length === 1 && /^[a-zA-Z]$/.test(key)) return 'Letter';
+
+  // Numbers (top row and numpad keys that report as digits)
+  if (key.length === 1 && /^[0-9]$/.test(key)) return 'Number';
+  
+  if (/^Numpad[0-9]$/.test(key)) return 'Number';
+  if (key === 'NumpadDecimal') return 'Symbol'; // Or 'Number' depending on preference
+  if (key === 'NumpadEnter') return 'Whitespace';
+  if (['NumpadAdd', 'NumpadSubtract', 'NumpadMultiply', 'NumpadDivide'].includes(key)) return 'Symbol';
+
+
+  // Whitespace
+  if (key === ' ' || key === 'Spacebar' || key === 'Enter' || key === 'Tab') return 'Whitespace';
+
+  // Navigation
+  if (key.startsWith('Arrow') || ['Home', 'End', 'PageUp', 'PageDown'].includes(key)) return 'Navigation';
+
+  // Function Keys
+  if (/^F([1-9]|1[0-2])$/.test(key)) return 'Function'; // F1-F12
+
+  // Editing Keys
+  if (['Backspace', 'Delete', 'Insert'].includes(key)) return 'Editing';
+
+  // System Keys
+  if (['Escape', 'PrintScreen', 'Pause', 'CapsLock', 'NumLock', 'ScrollLock'].includes(key)) return 'System';
+
+  // Symbols & Punctuation
+  if (key.length === 1 && /[~`!@#$%^&*()_\-+=[\]{}|\\;:'",<.>/?]/.test(key)) return 'Symbol';
+  
+  return 'Other';
+}
+
 
 const TOP_N_KEYS = 5;
 
@@ -36,6 +99,9 @@ export default function KeystrokeChroniclePage() {
   // Frequent Keys State
   const [keyFrequencies, setKeyFrequencies] = useState<Record<string, number>>({});
   const [topKeys, setTopKeys] = useState<{ key: string; count: number }[]>([]);
+
+  // Filter State
+  const [selectedCategories, setSelectedCategories] = useState<Set<KeystrokeCategory>>(new Set(ALL_CATEGORIES));
 
 
   const { toast } = useToast();
@@ -62,12 +128,12 @@ export default function KeystrokeChroniclePage() {
       }
       if (!isRecording && startTime && totalKeys > 0) {
           const finalDurationMinutes = (Date.now() - startTime) / (1000 * 60);
-          if (finalDurationMinutes > 0.01) {
+          if (finalDurationMinutes > 0.01) { // Avoid division by zero or tiny numbers
               setKpm(Math.round(totalKeys / finalDurationMinutes));
           } else {
-               setKpm(0);
+               setKpm(0); // Or calculate based on a minimum duration
           }
-      } else if (!isRecording) {
+      } else if (!isRecording) { // If stopped and no keys or never started
           setKpm(0);
       }
     }
@@ -89,13 +155,13 @@ export default function KeystrokeChroniclePage() {
 
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLButtonElement || (event.target as HTMLElement)?.closest('[role="dialog"]')) {
         return;
     }
 
     const now = Date.now();
     const newEntry: KeystrokeEntry = {
-      key: event.key,
+      key: event.key, // Store raw event.key
       timestamp: now,
       formattedTimestamp: new Date(now).toLocaleTimeString([], {
         hour: '2-digit',
@@ -110,9 +176,9 @@ export default function KeystrokeChroniclePage() {
       setBackspaceCount((prev) => prev + 1);
     }
 
-    setKeystrokes((prev) => [newEntry, ...prev.slice(0, 499)]);
+    setKeystrokes((prev) => [newEntry, ...prev.slice(0, 499)]); // Keep max 500 entries
 
-    const displayKey = formatKeyDisplay(event.key, false);
+    const displayKey = formatKeyDisplay(event.key, false); // Use formatted key for display frequency
     setKeyFrequencies((prevFrequencies) => ({
       ...prevFrequencies,
       [displayKey]: (prevFrequencies[displayKey] || 0) + 1,
@@ -126,7 +192,7 @@ export default function KeystrokeChroniclePage() {
 
     if (isRecording) {
       window.addEventListener('keydown', handleKeyDown);
-      if (!startTime) {
+      if (!startTime) { // Only set startTime if it's null (e.g. first start or after clear)
           setStartTime(Date.now());
       }
     } else {
@@ -144,20 +210,29 @@ export default function KeystrokeChroniclePage() {
     setIsRecording(nextRecordingState);
 
     if (nextRecordingState) {
-      setStartTime(Date.now());
-      setTotalKeys(0);
-      setBackspaceCount(0);
-      setKpm(0);
-      setKeyFrequencies({});
-      setTopKeys([]);
-      setAnalysisResult(null);
-      setAnalysisError(null);
+      // Reset metrics only if starting fresh or after a clear
+      if (!startTime || totalKeys === 0) {
+        setStartTime(Date.now());
+        setTotalKeys(0);
+        setBackspaceCount(0);
+        setKpm(0);
+        setKeyFrequencies({});
+        setTopKeys([]);
+        // Do not clear keystrokes or analysis results here, let clearLogs handle that
+      }
       toast({
         title: "Recording Started",
         description: "Capturing keystrokes and metrics...",
         duration: 3000,
       });
     } else {
+      // Calculate final KPM when stopping
+      if (startTime && totalKeys > 0) {
+        const finalDurationMinutes = (Date.now() - startTime) / (1000 * 60);
+        if (finalDurationMinutes > 0.01) {
+          setKpm(Math.round(totalKeys / finalDurationMinutes));
+        }
+      }
       toast({
         title: "Recording Stopped",
         description: "Keystroke capture paused.",
@@ -177,9 +252,10 @@ export default function KeystrokeChroniclePage() {
       return;
     }
 
+    // Export ALL keystrokes, not filtered ones
     const logData = keystrokes
       .slice()
-      .reverse()
+      .reverse() // Chronological order for export
       .map(entry => `${entry.formattedTimestamp} - Key: ${formatKeyDisplay(entry.key, true)}`)
       .join('\n');
 
@@ -207,7 +283,8 @@ export default function KeystrokeChroniclePage() {
     setKeystrokes([]);
     setAnalysisResult(null);
     setAnalysisError(null);
-    setStartTime(null);
+    // Reset metrics
+    setStartTime(null); // Reset start time so it's fresh for next recording
     setTotalKeys(0);
     setBackspaceCount(0);
     setKpm(0);
@@ -223,6 +300,7 @@ export default function KeystrokeChroniclePage() {
   const formatKeyDisplay = (key: string, forExportOrAI: boolean = false) => {
     const displayMap: { [key: string]: string } = {
       ' ': forExportOrAI ? '[Space]' : '␣',
+      'Spacebar': forExportOrAI ? '[Space]' : '␣', // Handle Spacebar variant
       'Enter': '[Enter]',
       'Tab': '[Tab]',
       'Backspace': '[Backspace]',
@@ -235,7 +313,8 @@ export default function KeystrokeChroniclePage() {
       'Control': '[Ctrl]',
       'Alt': '[Alt]',
       'Shift': '[Shift]',
-      'Meta': '[Meta]',
+      'Meta': '[Meta]', // Meta key (Windows key/Command key)
+      'OS': '[OS]', // OS specific key, often same as Meta
       'CapsLock': '[CapsLock]',
       'NumLock': '[NumLock]',
       'ScrollLock': '[ScrollLock]',
@@ -246,12 +325,27 @@ export default function KeystrokeChroniclePage() {
       'PageDown': '[PageDown]',
       'PrintScreen': '[PrintScreen]',
       'Pause': '[Pause]',
+      // Function keys F1-F12
       ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`F${i + 1}`, `[F${i + 1}]`])),
+      // Numpad keys
+      'Numpad0': '[Num0]', 'Numpad1': '[Num1]', 'Numpad2': '[Num2]', 'Numpad3': '[Num3]',
+      'Numpad4': '[Num4]', 'Numpad5': '[Num5]', 'Numpad6': '[Num6]', 'Numpad7': '[Num7]',
+      'Numpad8': '[Num8]', 'Numpad9': '[Num9]',
+      'NumpadDecimal': '[Num.]', 'NumpadEnter': '[NumEnter]',
+      'NumpadAdd': '[Num+]', 'NumpadSubtract': '[Num-]',
+      'NumpadMultiply': '[Num*]', 'NumpadDivide': '[Num/]',
     };
 
+    // Handle modifier keys that might have Left/Right suffix (e.g., ShiftLeft, ControlRight)
     if (key.startsWith('Control') || key.startsWith('Alt') || key.startsWith('Shift') || key.startsWith('Meta') || key.startsWith('OS')) {
-        return displayMap[key.replace(/Left|Right/, '')] ?? `[${key}]`;
+        // Normalize to base modifier name for display map
+        const baseModifier = key.replace(/Left|Right/, '');
+        return displayMap[baseModifier] ?? `[${key}]`; // Fallback to raw if not in map
     }
+    
+    // For dead keys, event.key can be "Dead" or specific like "Dead^".
+    if (key.startsWith('Dead')) return '[Dead]';
+
 
     return displayMap[key] ?? (key.length > 1 ? `[${key}]` : key);
   };
@@ -263,10 +357,11 @@ export default function KeystrokeChroniclePage() {
     setAnalysisResult(null);
     setAnalysisError(null);
 
+    // Use ALL keystrokes for analysis, not filtered ones
     const keystrokeSequence = keystrokes
       .slice()
-      .reverse()
-      .map(entry => formatKeyDisplay(entry.key, true))
+      .reverse() // Chronological order for analysis
+      .map(entry => formatKeyDisplay(entry.key, true)) // Format for AI
       .join(' ');
 
     try {
@@ -304,6 +399,11 @@ export default function KeystrokeChroniclePage() {
     </Card>
   );
 
+  const filteredKeystrokes = keystrokes.filter(entry =>
+    selectedCategories.has(getKeyCategory(entry.key))
+  );
+
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-background to-secondary/30">
       <header className="sticky top-0 z-30 flex items-center justify-between px-6 py-4 border-b shadow-md backdrop-blur-md bg-card/80 border-border">
@@ -322,6 +422,50 @@ export default function KeystrokeChroniclePage() {
             {isRecording ? <Pause className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
             {isRecording ? 'Stop Recording' : 'Start Recording'}
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" disabled={!isClient}>
+                <ListFilter className="w-4 h-4 mr-2" />
+                Filter ({selectedCategories.size}/{ALL_CATEGORIES.length})
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56">
+              <DropdownMenuLabel>Filter by Category</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={selectedCategories.size === ALL_CATEGORIES.length}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    setSelectedCategories(new Set(ALL_CATEGORIES));
+                  } else {
+                    setSelectedCategories(new Set());
+                  }
+                }}
+              >
+                {selectedCategories.size === ALL_CATEGORIES.length && selectedCategories.size > 0 ? 'Deselect All' : 'Select All'}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              {ALL_CATEGORIES.map(category => (
+                <DropdownMenuCheckboxItem
+                  key={category}
+                  checked={selectedCategories.has(category)}
+                  onCheckedChange={(checked) => {
+                    setSelectedCategories(prev => {
+                      const next = new Set(prev);
+                      if (checked) {
+                        next.add(category);
+                      } else {
+                        next.delete(category);
+                      }
+                      return next;
+                    });
+                  }}
+                >
+                  {category}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
            <Button
             onClick={handleAnalyze}
             variant="outline"
@@ -348,7 +492,7 @@ export default function KeystrokeChroniclePage() {
           <Button
             onClick={clearLogs}
             variant="destructive"
-            disabled={!isClient || (keystrokes.length === 0 && totalKeys === 0)}
+            disabled={!isClient || (keystrokes.length === 0 && totalKeys === 0)} // Disable if no data at all
             aria-disabled={!isClient || (keystrokes.length === 0 && totalKeys === 0)}
           >
             <Trash2 className="w-4 h-4 mr-2" />
@@ -365,6 +509,7 @@ export default function KeystrokeChroniclePage() {
             <CardDescription className="text-muted-foreground">
               {isRecording ? "Actively recording keystrokes..." : "Recording is paused. Press 'Start Recording' to begin."}
               {!isClient && " (Initializing...)"}
+              {isClient && keystrokes.length > 0 && ` Displaying ${filteredKeystrokes.length} of ${keystrokes.length} recorded keystrokes.`}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-grow p-0 overflow-hidden">
@@ -377,9 +522,16 @@ export default function KeystrokeChroniclePage() {
                     </p>
                   </div>
                 )}
-                {keystrokes.map((entry, index) => (
+                {filteredKeystrokes.length === 0 && keystrokes.length > 0 && (
+                  <div className="flex items-center justify-center h-full pt-10 text-center">
+                    <p className="text-muted-foreground text-lg">
+                      No keystrokes match the current filter criteria. Adjust filters or record more data.
+                    </p>
+                  </div>
+                )}
+                {filteredKeystrokes.map((entry, index) => (
                   <div
-                    key={`${entry.timestamp}-${index}-${entry.key}`}
+                    key={`${entry.timestamp}-${index}-${entry.key}`} // index is from filteredKeystrokes, timestamp and key provide uniqueness
                     className="flex justify-between items-center p-2 rounded-md hover:bg-primary/10 transition-colors duration-100 ease-in-out border border-transparent hover:border-primary/20 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-2 duration-300"
                     aria-label={`Keystroke: ${formatKeyDisplay(entry.key, true)} at ${entry.formattedTimestamp}`}
                   >
@@ -397,7 +549,7 @@ export default function KeystrokeChroniclePage() {
               <CardHeader className="border-b border-border/80 pb-4">
                 <CardTitle className="text-xl text-foreground">Live Session Metrics</CardTitle>
                 <CardDescription className="text-muted-foreground">
-                  Real-time statistics for the current recording session.
+                  Real-time statistics for the current recording session. Based on all captured keystrokes.
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-4 space-y-3">
@@ -429,7 +581,7 @@ export default function KeystrokeChroniclePage() {
                 <div className="space-y-1">
                     <CardTitle className="text-xl text-foreground">Most Frequent Keys</CardTitle>
                     <CardDescription className="text-muted-foreground">
-                    Top {TOP_N_KEYS} pressed keys this session.
+                    Top {TOP_N_KEYS} pressed keys this session (all types).
                     </CardDescription>
                 </div>
                 <ListOrdered className="h-5 w-5 text-muted-foreground" />
@@ -469,7 +621,7 @@ export default function KeystrokeChroniclePage() {
               <CardHeader className="border-b border-border/80">
                 <CardTitle className="text-xl text-foreground">AI Session Analysis</CardTitle>
                 <CardDescription className="text-muted-foreground">
-                 AI-powered insights based on recorded keystroke patterns.
+                 AI-powered insights based on all recorded keystroke patterns.
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-6 min-h-[150px]">
@@ -521,6 +673,3 @@ export default function KeystrokeChroniclePage() {
     </div>
   );
 }
-
-
-    
